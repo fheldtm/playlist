@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title></title>
+	<link rel="stylesheet" href="/css/reset.css">
+	<style>
+		html, body {
+			width: 100%;
+			height: 100%;
+			overflow: hidden;
+		}
+		body {
+			background: #000;
+		}
+		.youtube {
+			max-width: 100%;
+			width: 640px;
+			height: 100%;
+			overflow: hidden;
+			margin: 0 auto;
+			box-shadow: 1px 1px 6px rgba(255, 255, 255, 0.3);
+			transition: transform .3s, height .3s;
+			display: flex;
+			flex-direction: column;
+		}
+		.youtube.hide {
+			height: calc(100% + 360px);
+			transform: translateY(-360px);
+		}
+		.youtube__player {
+			display: block;
+			width: 100%;
+			max-height: 360px;
+			height: calc(100vw * (360 / 640));
+		}
+		.youtube__player .player {
+			width: 100%;
+			height: 100%;
+		}
+		.youtube__list {
+			width: 100%;
+			flex: 1;
+			/* height: calc(100% - 360px); */
+			background: #fff;
+			overflow-y: scroll;
+		}
+		.youtube__list ul {
+			border-top: 1px solid #ccc;
+		}
+		.youtube__list ul li {
+			width: 100%;
+		}
+		.youtube__list ul li button {
+			width: 100%;
+			padding: 10px;
+			border-bottom: 1px solid #ccc;
+		}
+		.youtube__set {
+			width: 100%;
+			min-height: 58px;
+			display: flex;
+			align-items: center;
+			flex-wrap: wrap;
+			gap: 10px;
+			padding: 10px;
+			justify-content: space-between;
+		}
+		.youtube__btns {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			height: 100%;
+		}
+		.youtube__btns button {
+			padding: 10px 20px;
+			box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+			border: 1px solid #699CFC;
+			background: #fff;
+			color: #699CFC;
+			border-radius: 3px;
+		}
+		.youtube__btns button.active {
+			background: #699CFC;
+			color: #fff;
+		}
+		.youtube__input {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+		}
+		.youtube__input input {
+			width: 210px;
+			height: 38px;
+			padding: 0 10px;
+			border: 1px solid #ccc;
+		}
+		.youtube__input input::placeholder {
+			color: #ccc;
+		}
+	</style>
+</head>
+<body>
+	<div class="youtube">
+		<div class="youtube__player">
+			<div class="player" id="player"></div>
+		</div>
+		<div class="youtube__list">
+			<div class="youtube__set">
+				<div class="youtube__btns">
+					<button id="repeatBtn" type="button">반복</button>
+					<button id="randomBtn" type="button">랜덤</button>
+				</div>
+				<div class="youtube__input">
+					<input id="youtubeInput" type="text" placeholder="링크 입력">
+					<div class="youtube__btns">
+						<button type="button" onclick="registerYoutube();">등록</button>
+					</div>
+				</div>
+			</div>
+			<ul id="youtubeList">
+			</ul>
+		</div>
+	</div>
+
+	<script>
+		const json = JSON.parse('<%- json %>');
+		const list = json.playlist[0].youtubeList
+		window.__list = list;
+
+		let currentYoutubeInfo = { name: '', link: '' };
+		const getCurrentYoutubeIndex = () => {
+			return list.findIndex(l => l.link === currentYoutubeInfo.link);
+		}
+
+		list.forEach(l => l.played = false);
+
+		// config localstorage setting
+		const localKey = 'custom_youtube_player_status_cj'
+		const item = window.localStorage.getItem(localKey);
+		if (!item) window.localStorage.setItem(localKey, JSON.stringify({ repeat: false, random: false }));
+		const playerStatus = item ? JSON.parse(item) : { repeat: false, random: false };
+
+		// 반복 버튼
+		const repeatBtn = document.querySelector('#repeatBtn');
+		const setRepeatBtn = () => {
+			const s = playerStatus.repeat;
+			if (s) {
+				repeatBtn.classList.add('active');
+			} else {
+				repeatBtn.classList.remove('active');
+			}
+		}
+		setRepeatBtn();
+		repeatBtn.addEventListener('click', () => {
+			playerStatus.repeat = !playerStatus.repeat;
+			setRepeatBtn();
+			window.localStorage.setItem(localKey, JSON.stringify(playerStatus));
+		})
+
+		// 랜덤 버튼
+		const randomBtn = document.querySelector('#randomBtn');
+		const setRandomBtn = () => {
+			const s = playerStatus.random;
+			if (s) {
+				randomBtn.classList.add('active');
+			} else {
+				randomBtn.classList.remove('active');
+			}
+
+			if (playerStatus.repeat && playerStatus.random) {
+				if (getCurrentYoutubeIndex() !== -1) {
+					list[getCurrentYoutubeIndex()].played = true;
+				}
+			} else {
+				list.forEach(l => {
+					l.played = false;
+					return l;
+				})
+			}
+		}
+		setRandomBtn();
+		randomBtn.addEventListener('click', () => {
+			playerStatus.random = !playerStatus.random;
+			setRandomBtn();
+			window.localStorage.setItem(localKey, JSON.stringify(playerStatus));
+		})
+
+		// youtube iframe api setting
+		const tag = document.createElement('script');
+		tag.src = "https://www.youtube.com/iframe_api";
+		const firstScriptTag = document.getElementsByTagName('script')[0];
+		firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+		let player;
+		function onYouTubeIframeAPIReady() {
+			player = new YT.Player('player', {
+				height: '360',
+				width: '640',
+				events: {
+					'onReady': onPlayerReady,
+					'onStateChange': onPlayerStateChange
+				}
+			});
+		}
+
+		// player setting
+		function onPlayerReady() {
+			init();
+		}
+
+		function onPlayerStateChange(event) {
+			if (event.data == YT.PlayerState.ENDED) {
+				nextYoutube();
+			}
+		}
+
+		const startYoutube = (i) => {
+			if (!player) return;
+
+			const idx = getCurrentYoutubeIndex();
+			if (idx === -1) return;
+
+			const target = list[i];
+
+			if (list[idx].link === target.link) {
+				return
+			}
+
+			if (target.link) {
+				player.loadVideoById(target.link)
+				currentYoutubeInfo.link = target.link;
+				currentYoutubeInfo.name = target.name;
+
+				if (playerStatus.repeat && playerStatus.random) {
+					target.played = true;
+					if (list.every(l => l.played)) {
+						list.forEach(l => l.played = false);
+						target.played = true;
+					}
+				}
+				console.log(list);
+			}
+		}
+
+		// random repeat setting
+		const getRandomYoutubeIndex = () => {
+			const filtered = list
+				.map((l, i) => {
+					l.idx = i;
+					return l;
+				})
+				.filter(l => !l.played)
+			const randIdx = Math.floor(Math.random() * filtered.length);
+			return filtered[randIdx].idx;
+		}
+
+		const nextYoutube = () => {
+			if (!playerStatus.repeat) return;
+
+			let nextIdx = playerStatus.random
+				? getRandomYoutubeIndex()
+				: getCurrentYoutubeIndex() + 1;
+
+			if (nextIdx >= list.length) {
+				nextIdx = 0;
+			}
+
+			startYoutube(nextIdx);
+		}
+
+		// json
+		const listElement = document.querySelector('#youtubeList');
+		const addLiElement = () => {
+			for (let i = listElement.children.length; i > 0; i--) {
+				const li = listElement.children[i - 1];
+				console.log(li);
+				listElement.removeChild(li);
+			}
+
+			console.log(list);
+			list.forEach((l, i) => {
+				const li = document.createElement('li');
+				const btn = document.createElement('button');
+				btn.type = 'button';
+				btn.textContent = l.name;
+				btn.addEventListener('click', () => startYoutube(i))
+				li.appendChild(btn);
+				listElement.appendChild(li);
+			})
+		}
+
+		const init = () => {
+			if (list.length !== 0) {
+				currentYoutubeInfo.name = list[0].name;
+				currentYoutubeInfo.link = list[0].link;
+				player.loadVideoById(currentYoutubeInfo.link);
+			}
+
+			addLiElement();
+
+			if (playerStatus.repeat && playerStatus.random) {
+				if (getCurrentYoutubeIndex() !== -1) {
+					list[getCurrentYoutubeIndex()].played = true;
+				}
+			} else {
+				list.forEach(l => {
+					l.played = false;
+					return l;
+				})
+			}
+		}
+
+		const registerYoutube = async () => {
+			const input = document.querySelector('#youtubeInput');
+			if (!input) return;
+
+			const v = input.value;
+			if (v === '' || v == null) return;
+
+			const res = await fetch('/api/youtube', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({ link: v })
+			})
+
+			if (res.status !== 200) return;
+
+			const { name, channel, link } = await res.json();
+			input.value = '';
+			if (link === '') {
+				window.alert('잘못된 링크입니다.')
+				return;
+			}
+
+			const len = listElement.children.length;
+			list.push({ name, channel, link })
+
+			addLiElement();
+		}
+	</script>
+</body>
+</html>
